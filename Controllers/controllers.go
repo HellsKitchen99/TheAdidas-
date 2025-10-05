@@ -18,8 +18,15 @@ func RequestFromIlya(c *gin.Context) {
 		})
 		return
 	}
-	result, _ := service.EventsProcess(requestFromIlya)
+	result, err := service.EventsProcess(requestFromIlya)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 	c.JSON(200, gin.H{
-		"answer": result,
+		"today":    result.Today,
+		"tomorrow": result.Tommorow,
 	})
 }
