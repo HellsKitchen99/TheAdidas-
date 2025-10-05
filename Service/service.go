@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -42,12 +43,14 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//запрос к геокодеру (currLocation)
 		responseFromGeoCoderCurrLocation, err := RequestToGeoCoder(geoCoderUrlCurrLocation)
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//получение координат prevLocation
 		var pointsPrevLocation models.Point = responseFromGeoCoderPrevLocation.Result.Items[0].Point
@@ -80,6 +83,7 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 
 		//считаем разницу
 		diff := startOfCurrEventTimeSeconds - endOfPrevEventTimeSeconds
+		log.Println(diff)
 
 		//запрашиваем погоду
 		var openWeatherUrl string = fmt.Sprintf("https://api.openweathermap.org/data/2.5/forecast?lat=%v&lon=%v&appid=%v&units=metric", currLat, currLon, weatherKey)
@@ -119,6 +123,7 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 			WindSpeed: int(chosenWeather.Wind.Speed),
 			WindDir:   getWindDirection(chosenWeather.Wind.Deg),
 		}
+		log.Println(weatherRes)
 
 		var responseEvent models.ResponseEventData = models.ResponseEventData{
 			Name: today[i].Name,
@@ -130,13 +135,14 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 				Lat: currLat,
 				Lon: currLon,
 			},
-			ToEventDuration: int(diff),
-			StartTime:       startOfCurrEvent,
-			EndTime:         endOfCurrEvent,
-			Weather:         weatherRes,
+			StartTime: startOfCurrEvent,
+			EndTime:   endOfCurrEvent,
+			Weather:   weatherRes,
 		}
 		newToday = append(newToday, responseEvent)
 	}
+
+	time.Sleep(10 * time.Second)
 
 	for i := 1; i < len(tomorrow); i++ {
 
@@ -157,12 +163,14 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//запрос к геокодеру (currLocation)
 		responseFromGeoCoderCurrLocation, err := RequestToGeoCoder(geoCoderUrlCurrLocation)
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//получение координат prevLocation
 		var pointsPrevLocation models.Point = responseFromGeoCoderPrevLocation.Result.Items[0].Point
@@ -195,6 +203,7 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 
 		//считаем разницу
 		diff := startOfCurrEventTimeSeconds - endOfPrevEventTimeSeconds
+		log.Println(diff)
 
 		//запрашиваем погоду
 		var openWeatherUrl string = fmt.Sprintf("https://api.openweathermap.org/data/2.5/forecast?lat=%v&lon=%v&appid=%v&units=metric", currLat, currLon, weatherKey)
@@ -234,6 +243,7 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 			WindSpeed: int(chosenWeather.Wind.Speed),
 			WindDir:   getWindDirection(chosenWeather.Wind.Deg),
 		}
+		log.Println(weatherRes)
 
 		var responseEvent models.ResponseEventData = models.ResponseEventData{
 			Name: tomorrow[i].Name,
@@ -245,10 +255,9 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 				Lat: currLat,
 				Lon: currLon,
 			},
-			ToEventDuration: int(diff),
-			StartTime:       startOfCurrEvent,
-			EndTime:         endOfCurrEvent,
-			Weather:         weatherRes,
+			StartTime: startOfCurrEvent,
+			EndTime:   endOfCurrEvent,
+			Weather:   weatherRes,
 		}
 		newTomorrow = append(newTomorrow, responseEvent)
 	}
