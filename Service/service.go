@@ -11,9 +11,8 @@ import (
 )
 
 var layout string = "2006-01-02T15:04:05Z"
-var openWeatherLayout = "2006-01-02 15:04:05"
-var apiKey string = "783e0858-39de-4c83-a72c-bc2858c795be"
-var weatherKey string = "4533e6577b4d8703b24b39df0d1afd5e"
+
+// var openWeatherLayout = "2006-01-02 15:04:05"
 
 func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error) {
 	var today []models.Event = requestData.Today
@@ -22,6 +21,21 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 
 	var newToday []models.ResponseEventData
 	var newTomorrow []models.ResponseEventData
+
+	//подгрузка env
+	if err := LoadEnv(); err != nil {
+		return responseToIlya, err
+	}
+
+	apiKey, err := GetApiKey()
+	if err != nil {
+		return responseToIlya, err
+	}
+
+	weatherKey, err := GetWeatherKey()
+	if err != nil {
+		return responseToIlya, err
+	}
 
 	//итерация по today
 	for i := 1; i < len(today); i++ {
