@@ -6,12 +6,12 @@ type ResponseToIlya struct {
 }
 
 type ResponseEventData struct {
-	Name            string                          `json:"name"`
-	UserLocation    Coordinates                     `json:"user_location"`
-	EventLocation   Coordinates                     `json:"event_location"`
-	ToEventDuration int                             `json:"to_event_duration"`
-	TransportTypes  []TransportForResponseEventData `json:"transport_types"`
-	WeatherForIlya  WeatherForIlya                  `json:"weather_for_ilya"`
+	Name          string         `json:"name"`
+	UserLocation  Coordinates    `json:"user_location"`
+	EventLocation Coordinates    `json:"event_location"`
+	StartTime     string         `json:"start_time"`
+	EndTime       string         `json:"end_time"`
+	Weather       WeatherForIlya `json:"weather"`
 }
 
 type Coordinates struct {
@@ -26,7 +26,7 @@ type TransportForResponseEventData struct {
 }
 
 type WeatherForIlya struct {
-	Temp      string `json:"temp"`
+	Temp      int    `json:"temp"`
 	FeelsLike int    `json:"feels_like"`
 	Condition string `json:"condition"`
 	WindSpeed int    `json:"wind_speed"`

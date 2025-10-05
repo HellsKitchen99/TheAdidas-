@@ -2,16 +2,17 @@ package service
 
 import (
 	models "TheAdidasTM/Models"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
 
 var layout string = "2006-01-02T15:04:05Z"
-var apiKey string = "783e0858-39de-4c83-a72c-bc2858c795be"
+
+// var openWeatherLayout = "2006-01-02 15:04:05"
 
 func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error) {
 	var today []models.Event = requestData.Today
@@ -20,6 +21,21 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 
 	var newToday []models.ResponseEventData
 	var newTomorrow []models.ResponseEventData
+
+	//подгрузка env
+	if err := LoadEnv(); err != nil {
+		return responseToIlya, err
+	}
+
+	apiKey, err := GetApiKey()
+	if err != nil {
+		return responseToIlya, err
+	}
+
+	weatherKey, err := GetWeatherKey()
+	if err != nil {
+		return responseToIlya, err
+	}
 
 	//итерация по today
 	for i := 1; i < len(today); i++ {
@@ -41,12 +57,14 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//запрос к геокодеру (currLocation)
 		responseFromGeoCoderCurrLocation, err := RequestToGeoCoder(geoCoderUrlCurrLocation)
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//получение координат prevLocation
 		var pointsPrevLocation models.Point = responseFromGeoCoderPrevLocation.Result.Items[0].Point
@@ -61,6 +79,7 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		//берем конец пред события и начало текущего
 		var endOfPrevEvent string = today[i-1].EndEvent
 		var startOfCurrEvent string = today[i].StartEvent
+		var endOfCurrEvent string = today[i].EndEvent
 
 		//парсим время
 		endOfPrevEventTime, err := time.Parse(layout, endOfPrevEvent)
@@ -78,28 +97,47 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 
 		//считаем разницу
 		diff := startOfCurrEventTimeSeconds - endOfPrevEventTimeSeconds
+		log.Println(diff)
 
-		transportsTimeToReach, err := MakeRequestForEveryTransport(prevLat, prevLat, currLat, currLon)
+		//запрашиваем погоду
+		var openWeatherUrl string = fmt.Sprintf("https://api.openweathermap.org/data/2.5/forecast?lat=%v&lon=%v&appid=%v&units=metric", currLat, currLon, weatherKey)
+		responseFromOpenweather, err := RequestToOpenWeather(openWeatherUrl)
 		if err != nil {
 			return responseToIlya, err
 		}
 
-		//запрашиваем погоду
-		//var openWeatherUrl string = fmt.Sprintf("api.openweathermap.org/data/2.5/forecast?lat={%v}&lon={%v}&appid={%v}", currLat, currLon, apiKey)
-		/*responseFromOpenweather, err := RequestToOpenWeather(openWeatherUrl)
-		if err != nil {
-			return responseToIlya, err
-		}*/
+		var chosenWeather models.Weather
+		var minDiff int64
+
+		for i, w := range responseFromOpenweather.List {
+			var diff int64 = startOfCurrEventTimeSeconds - w.Dt
+			if diff < 0 {
+				diff = -diff
+			}
+			if i == 0 {
+				minDiff = diff
+				chosenWeather = w
+			}
+			if diff < minDiff {
+				minDiff = diff
+				chosenWeather = w
+			}
+		}
+
+		cond := ""
+		if len(chosenWeather.Weather) > 0 {
+			cond = chosenWeather.Weather[0].Main
+		}
 
 		//weather для Илюхи
-		/*temp :=
-		feelsLike :=
-		condition :=
-		windSpeed :=
-		windDir :=
-		var weather models.WeatherForIlya = models.WeatherForIlya{
-
-		}*/
+		var weatherRes models.WeatherForIlya = models.WeatherForIlya{
+			Temp:      int(chosenWeather.Main.Temp),
+			FeelsLike: int(chosenWeather.Main.FeelsLike),
+			Condition: cond,
+			WindSpeed: int(chosenWeather.Wind.Speed),
+			WindDir:   getWindDirection(chosenWeather.Wind.Deg),
+		}
+		log.Println(weatherRes)
 
 		var responseEvent models.ResponseEventData = models.ResponseEventData{
 			Name: today[i].Name,
@@ -111,11 +149,14 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 				Lat: currLat,
 				Lon: currLon,
 			},
-			ToEventDuration: int(diff),
-			TransportTypes:  transportsTimeToReach,
+			StartTime: startOfCurrEvent,
+			EndTime:   endOfCurrEvent,
+			Weather:   weatherRes,
 		}
 		newToday = append(newToday, responseEvent)
 	}
+
+	time.Sleep(10 * time.Second)
 
 	for i := 1; i < len(tomorrow); i++ {
 
@@ -136,12 +177,14 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//запрос к геокодеру (currLocation)
 		responseFromGeoCoderCurrLocation, err := RequestToGeoCoder(geoCoderUrlCurrLocation)
 		if err != nil {
 			return responseToIlya, err
 		}
+		log.Println(responseFromGeoCoderPrevLocation)
 
 		//получение координат prevLocation
 		var pointsPrevLocation models.Point = responseFromGeoCoderPrevLocation.Result.Items[0].Point
@@ -154,8 +197,9 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		var currLon float64 = pointsCurrLocation.Lon
 
 		//берем конец пред события и начало текущего
-		var endOfPrevEvent string = today[i-1].EndEvent
-		var startOfCurrEvent string = today[i].StartEvent
+		var endOfPrevEvent string = tomorrow[i-1].EndEvent
+		var startOfCurrEvent string = tomorrow[i].StartEvent
+		var endOfCurrEvent string = tomorrow[i].EndEvent
 
 		//парсим время
 		endOfPrevEventTime, err := time.Parse(layout, endOfPrevEvent)
@@ -173,14 +217,50 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 
 		//считаем разницу
 		diff := startOfCurrEventTimeSeconds - endOfPrevEventTimeSeconds
+		log.Println(diff)
 
-		transportsTimeToReach, err := MakeRequestForEveryTransport(prevLat, prevLat, currLat, currLon)
+		//запрашиваем погоду
+		var openWeatherUrl string = fmt.Sprintf("https://api.openweathermap.org/data/2.5/forecast?lat=%v&lon=%v&appid=%v&units=metric", currLat, currLon, weatherKey)
+		responseFromOpenweather, err := RequestToOpenWeather(openWeatherUrl)
 		if err != nil {
 			return responseToIlya, err
 		}
 
+		var chosenWeather models.Weather
+		var minDiff int64
+
+		for i, w := range responseFromOpenweather.List {
+			var diff int64 = startOfCurrEventTimeSeconds - w.Dt
+			if diff < 0 {
+				diff = -diff
+			}
+			if i == 0 {
+				minDiff = diff
+				chosenWeather = w
+			}
+			if diff < minDiff {
+				minDiff = diff
+				chosenWeather = w
+			}
+		}
+
+		cond := ""
+		if len(chosenWeather.Weather) > 0 {
+			cond = chosenWeather.Weather[0].Main
+		}
+
+		//weather для Илюхи
+		var weatherRes models.WeatherForIlya = models.WeatherForIlya{
+			Temp:      int(chosenWeather.Main.Temp),
+			FeelsLike: int(chosenWeather.Main.FeelsLike),
+			Condition: cond,
+			WindSpeed: int(chosenWeather.Wind.Speed),
+			WindDir:   getWindDirection(chosenWeather.Wind.Deg),
+		}
+		log.Println(weatherRes)
+
 		var responseEvent models.ResponseEventData = models.ResponseEventData{
-			Name: today[i].Name,
+			Name: tomorrow[i].Name,
 			UserLocation: models.Coordinates{
 				Lat: prevLat,
 				Lon: prevLon,
@@ -189,8 +269,9 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 				Lat: currLat,
 				Lon: currLon,
 			},
-			ToEventDuration: int(diff),
-			TransportTypes:  transportsTimeToReach,
+			StartTime: startOfCurrEvent,
+			EndTime:   endOfCurrEvent,
+			Weather:   weatherRes,
 		}
 		newTomorrow = append(newTomorrow, responseEvent)
 	}
@@ -200,6 +281,29 @@ func EventsProcess(requestData models.RequestData) (models.ResponseToIlya, error
 		Tommorow: newTomorrow,
 	}
 	return responseToIlya, nil
+}
+
+func getWindDirection(degrees int) string {
+	switch {
+	case degrees >= 338 || degrees < 23:
+		return "N"
+	case degrees >= 23 && degrees < 68:
+		return "NE"
+	case degrees >= 68 && degrees < 113:
+		return "E"
+	case degrees >= 113 && degrees < 158:
+		return "SE"
+	case degrees >= 158 && degrees < 203:
+		return "S"
+	case degrees >= 203 && degrees < 248:
+		return "SW"
+	case degrees >= 248 && degrees < 293:
+		return "W"
+	case degrees >= 293 && degrees < 338:
+		return "NW"
+	default:
+		return ""
+	}
 }
 
 func RequestToGeoCoder(url string) (models.ResponseFromGeoCoder, error) {
@@ -219,205 +323,10 @@ func RequestToGeoCoder(url string) (models.ResponseFromGeoCoder, error) {
 	return responseFromGeoCoder, nil
 }
 
-func MakeRequestForEveryTransport(fromLat, fromLon, toLat, toLon float64) ([]models.TransportForResponseEventData, error) {
-	var results []models.TransportForResponseEventData
-	transports := []string{"bus", "car", "walking", "scooter", "taxi"}
-	for _, mode := range transports {
-		switch mode {
-		case "bus":
-			var apiUrl = fmt.Sprintf("https://routing.api.2gis.com/public_transport/2.0?key=%v", apiKey)
-			form := models.BusRequest{
-				Locale: "ru",
-				Source: models.Source{
-					Name: "A",
-					Point: models.PointForBusRequest{
-						Lat: fromLat,
-						Lon: fromLon,
-					},
-				},
-				Target: models.Target{
-					Name: "B",
-					Point: models.PointForBusRequest{
-						Lat: toLat,
-						Lon: toLon,
-					},
-				},
-				Transport: []models.TransportBusType{"bus"},
-			}
-			body, err := json.Marshal(form)
-			if err != nil {
-				return results, err
-			}
-			totalDuration, err := RequestToTransportApi(apiUrl, body)
-			if err != nil {
-				return results, err
-			}
-			results = append(results, models.TransportForResponseEventData{
-				Type:        mode,
-				Duration:    totalDuration,
-				StatusColor: getColor(totalDuration),
-			})
-		case "car":
-			var apiUrl string = fmt.Sprintf("https://routing.api.2gis.com/routing/7.0.0/global?key=%v", apiKey)
-			var point1 models.PointForCarRequest = models.PointForCarRequest{Lat: fromLat, Lon: fromLon, Type: "stop"}
-			var point2 models.PointForCarRequest = models.PointForCarRequest{Lat: toLat, Lon: toLon, Type: "stop"}
-			var points []models.PointForCarRequest = []models.PointForCarRequest{point1, point2}
-			var form models.CarRequest = models.CarRequest{
-				Points:    points,
-				Transport: "driving",
-				Filters: []models.FilterType{
-					models.FilterDirtRoad,
-					models.FilterTollRoad,
-					models.FilterFerry,
-				},
-				Output: "detailed",
-				Locale: "ru",
-			}
-			body, err := json.Marshal(form)
-			if err != nil {
-				return results, err
-			}
-			totalDuration, err := RequestToTransportApi(apiUrl, body)
-			if err != nil {
-				return results, err
-			}
-			results = append(results, models.TransportForResponseEventData{
-				Type:        mode,
-				Duration:    totalDuration,
-				StatusColor: getColor(totalDuration),
-			})
-		case "walking":
-			var apiUrl string = fmt.Sprintf("https://routing.api.2gis.com/routing/7.0.0/global?key=%v", apiKey)
-			var point1 models.WalkingPoint = models.WalkingPoint{Lat: fromLat, Lon: fromLon, Type: "stop"}
-			var point2 models.WalkingPoint = models.WalkingPoint{Lat: toLat, Lon: toLon, Type: "stop"}
-			var points []models.WalkingPoint = []models.WalkingPoint{point1, point2}
-			var form models.WalkingRequest = models.WalkingRequest{
-				Points:    points,
-				Transport: "walking",
-				Params: models.WalkingParams{
-					Pedestrian: models.PedestrianParams{
-						UseInstructions: true,
-					},
-				},
-				Filters: []models.FilterType{
-					models.FilterDirtRoad,
-					models.FilterFerry,
-					models.FilterHighway,
-					models.FilterBanStairway,
-				},
-				Output:        "detailed",
-				Locale:        "ru",
-				NeedAltitudes: true,
-			}
-			body, err := json.Marshal(form)
-			if err != nil {
-				return results, err
-			}
-			totalDuration, err := RequestToTransportApi(apiUrl, body)
-			if err != nil {
-				return results, err
-			}
-			results = append(results, models.TransportForResponseEventData{
-				Type:        mode,
-				Duration:    totalDuration,
-				StatusColor: getColor(totalDuration),
-			})
-		case "scooter":
-			var apiUrl string = fmt.Sprintf("https://routing.api.2gis.com/routing/7.0.0/global?key=%v", apiKey)
-			var point1 models.ScooterPoint = models.ScooterPoint{Lat: fromLat, Lon: fromLon, Type: "stop"}
-			var point2 models.ScooterPoint = models.ScooterPoint{Lat: toLat, Lon: toLon, Type: "stop"}
-			var form models.ScooterRequest = models.ScooterRequest{
-				Points:    []models.ScooterPoint{point1, point2},
-				Transport: "scooter",
-				Filters: []models.FilterType{
-					models.FilterBanCarRoad,
-					models.FilterBanStairway,
-				},
-				Output:        "detailed",
-				Locale:        "ru",
-				NeedAltitudes: true,
-			}
-			body, err := json.Marshal(form)
-			if err != nil {
-				return results, err
-			}
-			totalDuration, err := RequestToTransportApi(apiUrl, body)
-			if err != nil {
-				return results, err
-			}
-			results = append(results, models.TransportForResponseEventData{
-				Type:        mode,
-				Duration:    totalDuration,
-				StatusColor: getColor(totalDuration),
-			})
-		case "taxi":
-			var apiUrl string = fmt.Sprintf("https://routing.api.2gis.com/routing/7.0.0/global?key=%v", apiKey)
-			var point1 models.TaxiPoint = models.TaxiPoint{Lat: fromLat, Lon: fromLon, Type: "stop"}
-			var point2 models.TaxiPoint = models.TaxiPoint{Lat: toLat, Lon: toLon, Type: "stop"}
-			var form models.TaxiRequest = models.TaxiRequest{
-				Points:    []models.TaxiPoint{point1, point2},
-				Transport: "taxi",
-				Filters: []models.FilterType{
-					models.FilterDirtRoad,
-					models.FilterTollRoad,
-					models.FilterFerry,
-				},
-				Output: "detailed",
-				Locale: "ru",
-			}
-			body, err := json.Marshal(form)
-			if err != nil {
-				return results, err
-			}
-			totalDuration, err := RequestToTransportApi(apiUrl, body)
-			if err != nil {
-				return results, err
-			}
-			results = append(results, models.TransportForResponseEventData{
-				Type:        mode,
-				Duration:    totalDuration,
-				StatusColor: getColor(totalDuration),
-			})
-		}
-	}
-	return results, nil
-}
-
 type DurationResponse struct {
 	Result []struct {
 		TotalDuration int `json:"total_duration"`
 	} `json:"result"`
-}
-
-func RequestToTransportApi(url string, form []byte) (int, error) {
-	var totalDuration int
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(form))
-	if err != nil {
-		return totalDuration, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return totalDuration, err
-	}
-	var durationResponse DurationResponse
-	if err := json.Unmarshal(data, &durationResponse); err != nil {
-		return totalDuration, err
-	}
-	return durationResponse.Result[0].TotalDuration, nil
-}
-
-func getColor(duration int) string {
-	switch {
-	case duration == 0:
-		return "gray"
-	case duration < 1800:
-		return "green"
-	case duration < 3600:
-		return "yellow"
-	default:
-		return "red"
-	}
 }
 
 func RequestToOpenWeather(url string) (models.ResponseFromOpenWeather, error) {
