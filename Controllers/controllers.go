@@ -3,6 +3,7 @@ package controllers
 import (
 	models "TheAdidasTM/Models"
 	service "TheAdidasTM/Service"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +26,8 @@ func RequestFromIlya(c *gin.Context) {
 		})
 		return
 	}
+	log.Println(result.Today)
+	log.Println(result.Tommorow)
 	c.JSON(200, gin.H{
 		"today":    result.Today,
 		"tomorrow": result.Tommorow,
