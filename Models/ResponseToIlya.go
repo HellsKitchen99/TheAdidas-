@@ -6,13 +6,12 @@ type ResponseToIlya struct {
 }
 
 type ResponseEventData struct {
-	Name            string         `json:"name"`
-	UserLocation    Coordinates    `json:"user_location"`
-	EventLocation   Coordinates    `json:"event_location"`
-	StartTime       string         `json:"start_time"`
-	EndTime         string         `json:"end_time"`
-	ToEventDuration int            `json:"to_event_duration"`
-	Weather         WeatherForIlya `json:"weather"`
+	Name          string         `json:"name"`
+	UserLocation  Coordinates    `json:"user_location"`
+	EventLocation Coordinates    `json:"event_location"`
+	StartTime     string         `json:"start_time"`
+	EndTime       string         `json:"end_time"`
+	Weather       WeatherForIlya `json:"weather"`
 }
 
 type Coordinates struct {
